@@ -3,7 +3,12 @@
 name: kanboard
 services:
   app:
-    image: ${KANBOARD_IMAGE:-kanboard/kanboard:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: local-dev
+    image: kanboard-local:dev
     container_name: kanboard
     restart: always
     ports:
@@ -19,7 +24,7 @@ services:
       db:
         condition: service_healthy
   db:
-    image: postgres:latest
+    image: postgres:16-alpine
     restart: always
     environment:
       POSTGRES_USER: kanboard
