@@ -7,22 +7,42 @@ on:
 
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: kanboard-cicd-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PHP_VERSION: "8.4"
+
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+  POSTGRES_DB: kanboard_unit_test
+
+  DB_HOSTNAME: 127.0.0.1
+  DB_USERNAME: postgres
+  DB_PASSWORD: postgres
+  DB_NAME: kanboard_unit_test
+
 jobs:
   test:
     name: Unit Test Stage
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: kanboard_unit_test
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U postgres"
+          --health-cmd="pg_isready -U postgres -d kanboard_unit_test"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -31,42 +51,37 @@ jobs:
       test_message: ${{ steps.test_result.outputs.message }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Set up PHP using Marketplace Action
+      - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: "8.4"
+          php-version: ${{ env.PHP_VERSION }}
           extensions: mbstring, pdo_pgsql, pgsql, gd, xml, curl, zip, json, ldap
           tools: composer
+          coverage: none
 
-      - name: Install Composer dependencies using Marketplace Action
+      - name: Install Composer dependencies
         uses: ramsey/composer-install@v3
         with:
           composer-options: "--prefer-dist --no-progress --no-interaction"
 
-      - name: Run PostgreSQL PHPUnit tests using Marketplace Action
+      - name: Run PostgreSQL unit tests
         id: unit_test
-        uses: php-actions/phpunit@v4
-        env:
-          DB_HOSTNAME: postgres
-          DB_USERNAME: postgres
-          DB_PASSWORD: postgres
-          DB_NAME: kanboard_unit_test
-        with:
-          configuration: tests/units.postgres.xml
-          php_version: "8.4"
-          php_extensions: "pdo_pgsql pgsql ldap"
-          bootstrap: vendor/autoload.php
-          filter: "/^(?!.*testSanitizePath).*$/"
+        run: |
+          set -e
+
+          php vendor/bin/phpunit \
+            -c tests/units.postgres.xml \
+            --filter "/^(?!.*testSanitizePath).*$/"
 
       - name: Set test result message
         id: test_result
         if: always()
         run: |
           if [ "${{ steps.unit_test.outcome }}" = "success" ]; then
-            echo "message=Unit Test Passed: Kanboard PostgreSQL PHPUnit tests completed successfully" >> $GITHUB_OUTPUT
+            echo "message=Unit Test Passed: Kanboard PostgreSQL PHPUnit tests completed successfully" >> "$GITHUB_OUTPUT"
           else
-            echo "message=Unit Test Failed: Kanboard PostgreSQL PHPUnit tests failed" >> $GITHUB_OUTPUT
+            echo "message=Unit Test Failed: Kanboard PostgreSQL PHPUnit tests failed" >> "$GITHUB_OUTPUT"
           fi
