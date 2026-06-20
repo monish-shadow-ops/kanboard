@@ -55,7 +55,7 @@ jobs:
           DB_PASSWORD: postgres
           DB_NAME: kanboard_unit_test
         with:
-          configuration: tests/units.postgresql.xml
+          configuration: tests/units.postgres.xml
           php_version: "8.4"
           bootstrap: vendor/autoload.php
           filter: "/^(?!.*testSanitizePath).*$/"
