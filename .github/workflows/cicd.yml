@@ -4,12 +4,28 @@ on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 jobs:
   test:
     name: Unit Test Stage
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kanboard_unit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
     outputs:
       test_message: ${{ steps.test_result.outputs.message }}
@@ -22,19 +38,24 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
-          extensions: mbstring, pdo_sqlite, sqlite3, gd, xml, curl, zip, json, ldap
+          extensions: mbstring, pdo_pgsql, pgsql, gd, xml, curl, zip, json, ldap
           tools: composer
 
       - name: Install Composer dependencies using Marketplace Action
         uses: ramsey/composer-install@v3
         with:
-          composer-options: "--prefer-dist --no-progress"
+          composer-options: "--prefer-dist --no-progress --no-interaction"
 
-      - name: Run PHPUnit tests using Marketplace Action
+      - name: Run PostgreSQL PHPUnit tests using Marketplace Action
         id: unit_test
         uses: php-actions/phpunit@v4
+        env:
+          DB_HOSTNAME: postgres
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
+          DB_NAME: kanboard_unit_test
         with:
-          configuration: tests/units.sqlite.xml
+          configuration: tests/units.postgresql.xml
           php_version: "8.4"
           bootstrap: vendor/autoload.php
           filter: "/^(?!.*testSanitizePath).*$/"
@@ -44,7 +65,7 @@ jobs:
         if: always()
         run: |
           if [ "${{ steps.unit_test.outcome }}" = "success" ]; then
-            echo "message=Unit Test Passed: Kanboard PHPUnit tests completed successfully" >> $GITHUB_OUTPUT
+            echo "message=Unit Test Passed: Kanboard PostgreSQL PHPUnit tests completed successfully" >> $GITHUB_OUTPUT
           else
-            echo "message=Unit Test Failed: Kanboard PHPUnit tests failed" >> $GITHUB_OUTPUT
+            echo "message=Unit Test Failed: Kanboard PostgreSQL PHPUnit tests failed" >> $GITHUB_OUTPUT
           fi
