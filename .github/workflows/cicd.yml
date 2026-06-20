@@ -57,6 +57,7 @@ jobs:
         with:
           configuration: tests/units.postgres.xml
           php_version: "8.4"
+          php_extensions: "pdo_pgsql pgsql ldap"
           bootstrap: vendor/autoload.php
           filter: "/^(?!.*testSanitizePath).*$/"
 
