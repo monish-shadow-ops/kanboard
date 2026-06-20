@@ -26,6 +26,9 @@ env:
   DB_PASSWORD: postgres
   DB_NAME: kanboard_unit_test
 
+  LOCAL_IMAGE_NAME: kanboard-local
+  LOCAL_IMAGE_TAG: scan-test
+
 jobs:
   test:
     name: Unit Test Stage
@@ -103,4 +106,63 @@ jobs:
             echo "message=Unit Test Passed: Lightweight Kanboard PostgreSQL unit tests completed successfully" >> "$GITHUB_OUTPUT"
           else
             echo "message=Unit Test Failed: Lightweight Kanboard PostgreSQL unit tests failed" >> "$GITHUB_OUTPUT"
+          fi
+
+  scan:
+    name: Scan Stage
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 20
+
+    outputs:
+      scan_message: ${{ steps.scan_result.outputs.message }}
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image for scan
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          build-args: |
+            VERSION=scan-test
+          tags: ${{ env.LOCAL_IMAGE_NAME }}:${{ env.LOCAL_IMAGE_TAG }}
+
+      - name: Scan Docker image with Trivy
+        id: trivy_image_scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.LOCAL_IMAGE_NAME }}:${{ env.LOCAL_IMAGE_TAG }}
+          scan-type: image
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: 0
+
+      - name: Scan repository filesystem with Trivy
+        id: trivy_fs_scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: 0
+
+      - name: Set scan result message
+        id: scan_result
+        if: always()
+        run: |
+          if [ "${{ steps.trivy_image_scan.outcome }}" = "success" ] && [ "${{ steps.trivy_fs_scan.outcome }}" = "success" ]; then
+            echo "message=Scan Completed: Docker image and repository filesystem scans completed with Trivy" >> "$GITHUB_OUTPUT"
+          else
+            echo "message=Scan Failed: One or more Trivy scans failed" >> "$GITHUB_OUTPUT"
           fi
