@@ -208,7 +208,6 @@ jobs:
 
     outputs:
       image: ${{ steps.image_info.outputs.image }}
-      build_message: ${{ steps.image_info.outputs.message }}
 
     steps:
       - name: Checkout source code
@@ -240,15 +239,12 @@ jobs:
             ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}
             ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:latest
 
-      - name: Set build push result message
+      - name: Set image output
         id: image_info
         run: |
           IMAGE="${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}"
-
           echo "Image built and pushed: $IMAGE"
-
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
-          echo "message=Build Push Completed: $IMAGE pushed to Docker Hub" >> "$GITHUB_OUTPUT"
 
   deploy:
     name: Deploy to EC2 Stage
@@ -257,9 +253,6 @@ jobs:
       - versioning
       - build_push
     timeout-minutes: 10
-
-    outputs:
-      deploy_message: ${{ steps.deploy_result.outputs.message }}
 
     steps:
       - name: Deploy Docker image to EC2
@@ -301,16 +294,6 @@ jobs:
 
             curl -s http://localhost/healthcheck.php | grep "Database connection is OK"
 
-      - name: Set deploy result message
-        id: deploy_result
-        if: always()
-        run: |
-          if [ "${{ steps.deploy_app.outcome }}" = "success" ]; then
-            echo "message=Deploy Passed: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }} deployed to EC2 successfully" >> "$GITHUB_OUTPUT"
-          else
-            echo "message=Deploy Failed: EC2 deployment failed for ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}" >> "$GITHUB_OUTPUT"
-          fi
-
   slack_notification:
     name: Final Slack Notification
     runs-on: ubuntu-latest
@@ -331,5 +314,5 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": "🚀 Kanboard CI/CD Pipeline Completed\n\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nVersion: ${{ needs.versioning.outputs.version }}\nImage: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}\n\n🧪 Test Stage: ${{ needs.test.outputs.test_message }}\n🔍 Scan Stage: ${{ needs.scan.outputs.scan_message }}\n🏷️ Versioning Stage: ${{ needs.versioning.outputs.version_message }}\n📦 Build & Push Stage: ${{ needs.build_push.outputs.build_message }}\n☁️ Deploy Stage: ${{ needs.deploy.outputs.deploy_message }}\n\nJob Results:\nTest: ${{ needs.test.result }}\nScan: ${{ needs.scan.result }}\nVersioning: ${{ needs.versioning.result }}\nBuild Push: ${{ needs.build_push.result }}\nDeploy: ${{ needs.deploy.result }}"
+              "text": "🚀 Kanboard CI/CD Pipeline Completed\n\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nVersion: ${{ needs.versioning.outputs.version }}\nImage: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}\n\n🧪 Test Stage: ${{ needs.test.outputs.test_message }}\n🔍 Scan Stage: ${{ needs.scan.outputs.scan_message }}\n🏷️ Versioning Stage: ${{ needs.versioning.outputs.version_message }}\n📦 Build & Push Stage: Build Push Completed: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }} pushed to Docker Hub\n☁️ Deploy Stage: Deploy Completed: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }} deployed to EC2\n\nJob Results:\nTest: ${{ needs.test.result }}\nScan: ${{ needs.scan.result }}\nVersioning: ${{ needs.versioning.result }}\nBuild Push: ${{ needs.build_push.result }}\nDeploy: ${{ needs.deploy.result }}"
             }
