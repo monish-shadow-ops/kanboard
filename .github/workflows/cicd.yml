@@ -1,0 +1,49 @@
+name: Kanboard CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Unit Test Stage
+    runs-on: ubuntu-latest
+
+    outputs:
+      test_message: ${{ steps.test_result.outputs.message }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PHP using Marketplace Action
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: mbstring, pdo_sqlite, sqlite3, gd, xml, curl, zip, json
+          tools: composer
+
+      - name: Install Composer dependencies using Marketplace Action
+        uses: ramsey/composer-install@v3
+        with:
+          composer-options: "--prefer-dist --no-progress"
+
+      - name: Run PHPUnit tests using Marketplace Action
+        id: unit_test
+        uses: php-actions/phpunit@v4
+        with:
+          configuration: tests/units.sqlite.xml
+          php_version: "8.4"
+          bootstrap: vendor/autoload.php
+
+      - name: Set test result message
+        id: test_result
+        if: always()
+        run: |
+          if [ "${{ steps.unit_test.outcome }}" = "success" ]; then
+            echo "message=Unit Test Passed: Kanboard PHPUnit tests completed successfully" >> $GITHUB_OUTPUT
+          else
+            echo "message=Unit Test Failed: Kanboard PHPUnit tests failed" >> $GITHUB_OUTPUT
+          fi
