@@ -29,6 +29,7 @@ env:
   LOCAL_IMAGE_NAME: kanboard-local
   LOCAL_IMAGE_TAG: scan-test
 
+  DOCKERHUB_NAMESPACE: monishs2722
   IMAGE_REPOSITORY: kanboard-cicd
 
 jobs:
@@ -236,13 +237,15 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_REPOSITORY }}:latest
+            ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}
+            ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:latest
 
       - name: Set build push result message
         id: image_info
         run: |
-          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}"
+          IMAGE="${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}"
+
+          echo "Image built and pushed: $IMAGE"
 
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "message=Build Push Completed: $IMAGE pushed to Docker Hub" >> "$GITHUB_OUTPUT"
@@ -250,7 +253,9 @@ jobs:
   deploy:
     name: Deploy to EC2 Stage
     runs-on: ubuntu-latest
-    needs: build_push
+    needs:
+      - versioning
+      - build_push
     timeout-minutes: 10
 
     outputs:
@@ -267,7 +272,7 @@ jobs:
           script: |
             set -e
 
-            IMAGE="${{ needs.build_push.outputs.image }}"
+            IMAGE="${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}"
 
             echo "Deploying image: $IMAGE"
 
@@ -301,7 +306,7 @@ jobs:
         if: always()
         run: |
           if [ "${{ steps.deploy_app.outcome }}" = "success" ]; then
-            echo "message=Deploy Passed: ${{ needs.build_push.outputs.image }} deployed to EC2 successfully" >> "$GITHUB_OUTPUT"
+            echo "message=Deploy Passed: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }} deployed to EC2 successfully" >> "$GITHUB_OUTPUT"
           else
-            echo "message=Deploy Failed: EC2 deployment failed for ${{ needs.build_push.outputs.image }}" >> "$GITHUB_OUTPUT"
+            echo "message=Deploy Failed: EC2 deployment failed for ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}" >> "$GITHUB_OUTPUT"
           fi
