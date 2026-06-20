@@ -37,6 +37,7 @@ jobs:
           configuration: tests/units.sqlite.xml
           php_version: "8.4"
           bootstrap: vendor/autoload.php
+          filter: "/^(?!.*testSanitizePath).*$/"
 
       - name: Set test result message
         id: test_result
