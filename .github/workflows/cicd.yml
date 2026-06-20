@@ -310,3 +310,26 @@ jobs:
           else
             echo "message=Deploy Failed: EC2 deployment failed for ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}" >> "$GITHUB_OUTPUT"
           fi
+
+  slack_notification:
+    name: Final Slack Notification
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - test
+      - scan
+      - versioning
+      - build_push
+      - deploy
+    timeout-minutes: 5
+
+    steps:
+      - name: Send final Slack notification
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "🚀 Kanboard CI/CD Pipeline Completed\n\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nVersion: ${{ needs.versioning.outputs.version }}\nImage: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}\n\n🧪 Test Stage: ${{ needs.test.outputs.test_message }}\n🔍 Scan Stage: ${{ needs.scan.outputs.scan_message }}\n🏷️ Versioning Stage: ${{ needs.versioning.outputs.version_message }}\n📦 Build & Push Stage: ${{ needs.build_push.outputs.build_message }}\n☁️ Deploy Stage: ${{ needs.deploy.outputs.deploy_message }}\n\nJob Results:\nTest: ${{ needs.test.result }}\nScan: ${{ needs.scan.result }}\nVersioning: ${{ needs.versioning.result }}\nBuild Push: ${{ needs.build_push.result }}\nDeploy: ${{ needs.deploy.result }}"
+            }
