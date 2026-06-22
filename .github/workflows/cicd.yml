@@ -2,9 +2,7 @@ name: Kanboard CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
-
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -15,20 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PHP_VERSION: "8.4"
-
-  POSTGRES_USER: postgres
-  POSTGRES_PASSWORD: postgres
-  POSTGRES_DB: kanboard_unit_test
-
-  DB_HOSTNAME: 127.0.0.1
-  DB_USERNAME: postgres
-  DB_PASSWORD: postgres
-  DB_NAME: kanboard_unit_test
-
-  LOCAL_IMAGE_NAME: kanboard-local
-  LOCAL_IMAGE_TAG: scan-test
-
   DOCKERHUB_NAMESPACE: monishs2722
   IMAGE_REPOSITORY: kanboard-cicd
 
@@ -37,6 +21,14 @@ jobs:
     name: Unit Test Stage
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: kanboard_unit_test
+      DB_HOSTNAME: 127.0.0.1
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: kanboard_unit_test
 
     services:
       postgres:
@@ -53,9 +45,6 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
-    outputs:
-      test_message: ${{ steps.test_result.outputs.message }}
-
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -63,7 +52,7 @@ jobs:
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: ${{ env.PHP_VERSION }}
+          php-version: "8.4"
           extensions: mbstring, pdo_pgsql, pgsql, gd, xml, curl, zip, json, ldap
           tools: composer
           coverage: none
@@ -73,8 +62,7 @@ jobs:
         with:
           composer-options: "--prefer-dist --no-progress --no-interaction"
 
-      - name: Select lightweight unit test files
-        id: select_tests
+      - name: Run lightweight PostgreSQL unit tests
         run: |
           set -e
 
@@ -87,38 +75,17 @@ jobs:
           echo "Selected test files:"
           cat selected-tests.txt
 
-          if [ ! -s selected-tests.txt ]; then
-            echo "No test files selected"
-            exit 1
-          fi
-
-      - name: Run lightweight PostgreSQL unit tests
-        id: unit_test
-        run: |
-          set -e
+          test -s selected-tests.txt
 
           php vendor/bin/phpunit \
             -c tests/units.postgres.xml \
             $(cat selected-tests.txt)
-
-      - name: Set test result message
-        id: test_result
-        if: always()
-        run: |
-          if [ "${{ steps.unit_test.outcome }}" = "success" ]; then
-            echo "message=Unit Test Passed: Lightweight Kanboard PostgreSQL unit tests completed successfully" >> "$GITHUB_OUTPUT"
-          else
-            echo "message=Unit Test Failed: Lightweight Kanboard PostgreSQL unit tests failed" >> "$GITHUB_OUTPUT"
-          fi
 
   scan:
     name: Scan Stage
     runs-on: ubuntu-latest
     needs: test
     timeout-minutes: 20
-
-    outputs:
-      scan_message: ${{ steps.scan_result.outputs.message }}
 
     steps:
       - name: Checkout source code
@@ -133,15 +100,13 @@ jobs:
           context: .
           push: false
           load: true
-          build-args: |
-            VERSION=scan-test
-          tags: ${{ env.LOCAL_IMAGE_NAME }}:${{ env.LOCAL_IMAGE_TAG }}
+          build-args: VERSION=scan-test
+          tags: kanboard-local:scan-test
 
       - name: Scan Docker image with Trivy
-        id: trivy_image_scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.LOCAL_IMAGE_NAME }}:${{ env.LOCAL_IMAGE_TAG }}
+          image-ref: kanboard-local:scan-test
           scan-type: image
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -149,7 +114,6 @@ jobs:
           exit-code: 0
 
       - name: Scan repository filesystem with Trivy
-        id: trivy_fs_scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -160,25 +124,13 @@ jobs:
           format: table
           exit-code: 0
 
-      - name: Set scan result message
-        id: scan_result
-        if: always()
-        run: |
-          if [ "${{ steps.trivy_image_scan.outcome }}" = "success" ] && [ "${{ steps.trivy_fs_scan.outcome }}" = "success" ]; then
-            echo "message=Scan Completed: Docker image and repository filesystem scans completed with Trivy" >> "$GITHUB_OUTPUT"
-          else
-            echo "message=Scan Failed: One or more Trivy scans failed" >> "$GITHUB_OUTPUT"
-          fi
-
   versioning:
     name: Versioning Automation Stage
     runs-on: ubuntu-latest
     needs: scan
     timeout-minutes: 5
-
     outputs:
       version: ${{ steps.version.outputs.new_tag }}
-      version_message: ${{ steps.version_result.outputs.message }}
 
     steps:
       - name: Checkout source code with tags
@@ -195,19 +147,11 @@ jobs:
           tag_prefix: v
           fetch_all_tags: true
 
-      - name: Set version result message
-        id: version_result
-        run: |
-          echo "message=Version Created: ${{ steps.version.outputs.new_tag }}" >> "$GITHUB_OUTPUT"
-
   build_push:
     name: Build and Push Stage
     runs-on: ubuntu-latest
     needs: versioning
     timeout-minutes: 25
-
-    outputs:
-      image: ${{ steps.image_info.outputs.image }}
 
     steps:
       - name: Checkout source code
@@ -227,8 +171,7 @@ jobs:
         with:
           context: .
           push: true
-          build-args: |
-            VERSION=${{ needs.versioning.outputs.version }}
+          build-args: VERSION=${{ needs.versioning.outputs.version }}
           labels: |
             org.opencontainers.image.title=Kanboard CI/CD
             org.opencontainers.image.description=Kanboard custom image built through GitHub Actions CI/CD
@@ -238,13 +181,6 @@ jobs:
           tags: |
             ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}
             ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:latest
-
-      - name: Set image output
-        id: image_info
-        run: |
-          IMAGE="${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}"
-          echo "Image built and pushed: $IMAGE"
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
   deploy:
     name: Deploy to EC2 Stage
@@ -256,7 +192,6 @@ jobs:
 
     steps:
       - name: Deploy Docker image to EC2
-        id: deploy_app
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -266,7 +201,6 @@ jobs:
             set -e
 
             IMAGE="${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}"
-
             echo "Deploying image: $IMAGE"
 
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login \
@@ -274,7 +208,6 @@ jobs:
               --password-stdin
 
             docker pull "$IMAGE"
-
             docker stop kanboard || true
             docker rm kanboard || true
 
@@ -291,7 +224,6 @@ jobs:
               "$IMAGE"
 
             sleep 15
-
             curl -s http://localhost/healthcheck.php | grep "Database connection is OK"
 
   slack_notification:
@@ -314,5 +246,6 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": "🚀 Kanboard CI/CD Pipeline Completed\n\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nVersion: ${{ needs.versioning.outputs.version }}\nImage: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}\n\n🧪 Test Stage: ${{ needs.test.outputs.test_message }}\n🔍 Scan Stage: ${{ needs.scan.outputs.scan_message }}\n🏷️ Versioning Stage: ${{ needs.versioning.outputs.version_message }}\n📦 Build & Push Stage: Build Push Completed: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }} pushed to Docker Hub\n☁️ Deploy Stage: Deploy Completed: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }} deployed to EC2\n\nJob Results:\nTest: ${{ needs.test.result }}\nScan: ${{ needs.scan.result }}\nVersioning: ${{ needs.versioning.result }}\nBuild Push: ${{ needs.build_push.result }}\nDeploy: ${{ needs.deploy.result }}"
+              "text": "🚀 Kanboard CI/CD Pipeline Completed\n\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nVersion: ${{ needs.versioning.outputs.version }}\nImage: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}\n\n🧪 Test Stage: ${{ needs.test.result }}\n🔍 Scan Stage: ${{ needs.scan.result }}\n🏷️ Versioning Stage: ${{ needs.versioning.result }}\n📦 Build & Push Stage: ${{ needs.build_push.result }}\n☁️ Deploy Stage: ${{ needs.deploy.result }}"
             }
+
