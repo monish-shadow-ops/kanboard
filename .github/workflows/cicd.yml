@@ -15,11 +15,36 @@ concurrency:
 env:
   DOCKERHUB_NAMESPACE: monishs2722
   IMAGE_REPOSITORY: kanboard-cicd
+  SOURCE_ARTIFACT: kanboard-source.tar
 
 jobs:
+  prepare_source:
+    name: Checkout and Upload Source
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Package source code
+        run: |
+          tar --exclude='./kanboard-source.tar' -cf kanboard-source.tar .
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+          path: kanboard-source.tar
+          archive: false
+          retention-days: 1
+
   test:
     name: Unit Test Stage
     runs-on: ubuntu-latest
+    needs: prepare_source
     timeout-minutes: 10
     env:
       POSTGRES_USER: postgres
@@ -46,8 +71,15 @@ jobs:
           --health-retries=5
 
     steps:
-      - name: Checkout source code
-        uses: actions/checkout@v6
+      - name: Download source artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+
+      - name: Extract source code
+        run: |
+          tar -xf kanboard-source.tar
+          rm kanboard-source.tar
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -88,8 +120,15 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Checkout source code
-        uses: actions/checkout@v6
+      - name: Download source artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+
+      - name: Extract source code
+        run: |
+          tar -xf kanboard-source.tar
+          rm kanboard-source.tar
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -133,10 +172,16 @@ jobs:
       version: ${{ steps.version.outputs.new_tag }}
 
     steps:
-      - name: Checkout source code with tags
-        uses: actions/checkout@v6
+      - name: Download source artifact
+        uses: actions/download-artifact@v8
         with:
-          fetch-depth: 0
+          name: ${{ env.SOURCE_ARTIFACT }}
+
+      - name: Extract source code
+        run: |
+          tar -xf kanboard-source.tar
+          rm kanboard-source.tar
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Create semantic version tag
         id: version
@@ -154,8 +199,15 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - name: Checkout source code
-        uses: actions/checkout@v6
+      - name: Download source artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.SOURCE_ARTIFACT }}
+
+      - name: Extract source code
+        run: |
+          tar -xf kanboard-source.tar
+          rm kanboard-source.tar
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -231,6 +283,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - prepare_source
       - test
       - scan
       - versioning
@@ -246,5 +299,5 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": "🚀 Kanboard CI/CD Pipeline Completed\n\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nVersion: ${{ needs.versioning.outputs.version }}\nImage: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}\n\n🧪 Test Stage: ${{ needs.test.result }}\n🔍 Scan Stage: ${{ needs.scan.result }}\n🏷️ Versioning Stage: ${{ needs.versioning.result }}\n📦 Build & Push Stage: ${{ needs.build_push.result }}\n☁️ Deploy Stage: ${{ needs.deploy.result }}"
+              "text": "🚀 Kanboard CI/CD Pipeline Completed\n\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nVersion: ${{ needs.versioning.outputs.version }}\nImage: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}\n\n📥 Source Stage: ${{ needs.prepare_source.result }}\n🧪 Test Stage: ${{ needs.test.result }}\n🔍 Scan Stage: ${{ needs.scan.result }}\n🏷️ Versioning Stage: ${{ needs.versioning.result }}\n📦 Build & Push Stage: ${{ needs.build_push.result }}\n☁️ Deploy Stage: ${{ needs.deploy.result }}"
             }
