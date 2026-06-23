@@ -20,14 +20,15 @@ env:
 jobs:
   prepare_source:
     name: Checkout and Upload Source
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, kanboard-runner]
     timeout-minutes: 10
 
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Package source code
         run: |
@@ -43,9 +44,10 @@ jobs:
 
   test:
     name: Unit Test Stage
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, kanboard-runner]
     needs: prepare_source
     timeout-minutes: 10
+
     env:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -71,6 +73,9 @@ jobs:
           --health-retries=5
 
     steps:
+      - name: Clean workspace
+        run: find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
       - name: Download source artifact
         uses: actions/download-artifact@v8
         with:
@@ -115,11 +120,14 @@ jobs:
 
   scan:
     name: Scan Stage
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, kanboard-runner]
     needs: test
     timeout-minutes: 20
 
     steps:
+      - name: Clean workspace
+        run: find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
       - name: Download source artifact
         uses: actions/download-artifact@v8
         with:
@@ -129,6 +137,12 @@ jobs:
         run: |
           tar -xf kanboard-source.tar
           rm kanboard-source.tar
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -165,13 +179,17 @@ jobs:
 
   versioning:
     name: Versioning Automation Stage
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, kanboard-runner]
     needs: scan
     timeout-minutes: 5
+
     outputs:
       version: ${{ steps.version.outputs.new_tag }}
 
     steps:
+      - name: Clean workspace
+        run: find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
       - name: Download source artifact
         uses: actions/download-artifact@v8
         with:
@@ -194,11 +212,14 @@ jobs:
 
   build_push:
     name: Build and Push Stage
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, kanboard-runner]
     needs: versioning
     timeout-minutes: 25
 
     steps:
+      - name: Clean workspace
+        run: find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
       - name: Download source artifact
         uses: actions/download-artifact@v8
         with:
@@ -209,14 +230,14 @@ jobs:
           tar -xf kanboard-source.tar
           rm kanboard-source.tar
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
       - name: Login to Docker Hub
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Build and push Kanboard Docker image
         uses: docker/build-push-action@v7
@@ -236,7 +257,7 @@ jobs:
 
   deploy:
     name: Deploy to EC2 Stage
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, kanboard-runner]
     needs:
       - versioning
       - build_push
@@ -255,11 +276,26 @@ jobs:
             IMAGE="${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}"
             echo "Deploying image: $IMAGE"
 
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login \
-              -u "${{ secrets.DOCKERHUB_USERNAME }}" \
-              --password-stdin
+            docker logout || true
 
-            docker pull "$IMAGE"
+            echo "Logging in to Docker Hub..."
+            for i in 1 2 3; do
+              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login \
+                -u "${{ secrets.DOCKERHUB_USERNAME }}" \
+                --password-stdin && break
+
+              echo "Docker login failed. Retrying in 10 seconds..."
+              sleep 10
+            done
+
+            echo "Pulling Docker image..."
+            for i in 1 2 3; do
+              docker pull "$IMAGE" && break
+
+              echo "Docker pull failed. Retrying in 10 seconds..."
+              sleep 10
+            done
+
             docker stop kanboard || true
             docker rm kanboard || true
 
@@ -280,7 +316,7 @@ jobs:
 
   slack_notification:
     name: Final Slack Notification
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, kanboard-runner]
     if: always()
     needs:
       - prepare_source
