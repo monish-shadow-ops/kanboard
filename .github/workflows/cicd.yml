@@ -20,7 +20,7 @@ env:
 jobs:
   prepare_source:
     name: Checkout and Upload Source
-    runs-on: [self-hosted, linux, x64, kanboard-runner]
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
 
     steps:
@@ -44,7 +44,7 @@ jobs:
 
   test:
     name: Unit Test Stage
-    runs-on: [self-hosted, linux, x64, kanboard-runner]
+    runs-on: [self-hosted, linux, x64]
     needs: prepare_source
     timeout-minutes: 10
 
@@ -120,7 +120,7 @@ jobs:
 
   scan:
     name: Scan Stage
-    runs-on: [self-hosted, linux, x64, kanboard-runner]
+    runs-on: [self-hosted, linux, x64]
     needs: test
     timeout-minutes: 20
 
@@ -179,7 +179,7 @@ jobs:
 
   versioning:
     name: Versioning Automation Stage
-    runs-on: [self-hosted, linux, x64, kanboard-runner]
+    runs-on: [self-hosted, linux, x64]
     needs: scan
     timeout-minutes: 5
 
@@ -212,7 +212,7 @@ jobs:
 
   build_push:
     name: Build and Push Stage
-    runs-on: [self-hosted, linux, x64, kanboard-runner]
+    runs-on: [self-hosted, linux, x64]
     needs: versioning
     timeout-minutes: 25
 
@@ -257,7 +257,7 @@ jobs:
 
   deploy:
     name: Deploy to EC2 Stage
-    runs-on: [self-hosted, linux, x64, kanboard-runner]
+    runs-on: [self-hosted, linux, x64]
     needs:
       - versioning
       - build_push
@@ -316,7 +316,7 @@ jobs:
 
   slack_notification:
     name: Final Slack Notification
-    runs-on: [self-hosted, linux, x64, kanboard-runner]
+    runs-on: [self-hosted, linux, x64]
     if: always()
     needs:
       - prepare_source
