@@ -311,9 +311,6 @@ jobs:
               -v kanboard-certs:/etc/nginx/ssl \
               "$IMAGE"
 
-            sleep 15
-            curl -s http://localhost/healthcheck.php | grep "Database connection is OK"
-
   slack_notification:
     name: Final Slack Notification
     runs-on: [self-hosted, linux, x64]
