@@ -336,4 +336,4 @@ jobs:
           payload: |
             {
               "text": "🚀 Kanboard CI/CD Pipeline Completed\n\nRepository: ${{ github.repository }}\nBranch: ${{ github.ref_name }}\nVersion: ${{ needs.versioning.outputs.version }}\nImage: ${{ env.DOCKERHUB_NAMESPACE }}/${{ env.IMAGE_REPOSITORY }}:${{ needs.versioning.outputs.version }}\n\n📥 Source Stage: ${{ needs.prepare_source.result }}\n🧪 Test Stage: ${{ needs.test.result }}\n🔍 Scan Stage: ${{ needs.scan.result }}\n🏷️ Versioning Stage: ${{ needs.versioning.result }}\n📦 Build & Push Stage: ${{ needs.build_push.result }}\n☁️ Deploy Stage: ${{ needs.deploy.result }}"
-            } 
+            }  
