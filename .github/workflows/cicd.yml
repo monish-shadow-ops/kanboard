@@ -303,8 +303,8 @@ jobs:
               --name kanboard \
               --network kanboard-net \
               --restart always \
-              -p 80:80 \
-              -p 443:443 \
+              -p 8080:80 \
+              -e APPLICATION_URL=https://monish.kubeace.in \
               -e DATABASE_URL=postgres://kanboard:kanboard-secret@kanboard-db/kanboard \
               -v kanboard-data:/var/www/app/data \
               -v kanboard-plugins:/var/www/app/plugins \
